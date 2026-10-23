@@ -1,6 +1,6 @@
 -- Dan FFA Script | Luau | Roblox Executor (dff)
 -- Devs: diorovve & sobhanlover
--- Features: AutoKill, ESP, Lock-on (press/hold + bind), Fast Reload, Fly, Panic Stop
+-- Features: AutoKill (auto-aim + auto-shoot), ESP, Multi Lock-on (press/hold + bind), Fast Reload, Fly, Panic Stop
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,19 +12,36 @@ local Camera = workspace.CurrentCamera
 local Config = {
     AutoKill = false,
     ESP = false,
-    LockedPlayer = nil,
+    LockedPlayers = {},
     FastReload = false,
     Fly = false,
     FlySpeed = 120,
     AutoKillRange = 50,
     ESPColor = Color3.fromRGB(255, 0, 0),
-    LockMode = "Hold",          -- "Hold" | "Press"
-    LockBind = Enum.KeyCode.Q,  -- Q | E | RMB
+    LockMode = "Hold",
+    LockBind = Enum.KeyCode.Q,
     LockActive = false,
-    ReloadThreshold = 1,        -- перезарядка когда патронов <= этого
+    ReloadThreshold = 1,
 }
 
 local Running = { AutoKill = false, FastReload = false }
+
+local function InLockList(p)
+    for _, x in ipairs(Config.LockedPlayers) do
+        if x == p then return true end
+    end
+    return false
+end
+
+local function ToggleLockPlayer(p)
+    if InLockList(p) then
+        for i, x in ipairs(Config.LockedPlayers) do
+            if x == p then table.remove(Config.LockedPlayers, i) break end
+        end
+    else
+        table.insert(Config.LockedPlayers, p)
+    end
+end
 
 -- ============ PANIC ============
 local function PanicStop()
@@ -32,7 +49,7 @@ local function PanicStop()
     Config.ESP = false
     Config.FastReload = false
     Config.Fly = false
-    Config.LockedPlayer = nil
+    Config.LockedPlayers = {}
     Config.LockActive = false
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Character then
@@ -163,9 +180,7 @@ local function CreateChoice(parent, text, key, options, onChange)
     corner.Parent = btn
     local idx = 1
     for i, o in ipairs(options) do if o.value == Config[key] then idx = i end end
-    local function render()
-        btn.Text = text .. ": " .. options[idx].label
-    end
+    local function render() btn.Text = text .. ": " .. options[idx].label end
     render()
     btn.MouseButton1Click:Connect(function()
         idx = idx % #options + 1
@@ -193,32 +208,41 @@ MainContent.BackgroundTransparency = 1
 MainContent.Visible = true
 MainContent.Parent = ContentFrame
 
-CreateToggle(MainContent, "Auto Kill", "AutoKill", function(state)
+-- AUTO AIM + AUTO SHOOT
+CreateToggle(MainContent, "Auto Kill (Shoot)", "AutoKill", function(state)
     if state and not Running.AutoKill then
         Running.AutoKill = true
         task.spawn(function()
             while Config.AutoKill do
-                task.wait(0.08)
+                task.wait(0.05)
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if not hrp then continue end
-                local nearest, nearestDist = nil, Config.AutoKillRange
+
+                local nearest, nearestDist, nearestHead = nil, Config.AutoKillRange, nil
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p == LocalPlayer then continue end
                     local c = p.Character
                     if not c then continue end
                     local hum = c:FindFirstChildOfClass("Humanoid")
                     if not hum or hum.Health <= 0 then continue end
+                    local head = c:FindFirstChild("Head") or c:FindFirstChild("HumanoidRootPart")
                     local tHrp = c:FindFirstChild("HumanoidRootPart")
-                    if not tHrp then continue end
+                    if not head or not tHrp then continue end
                     local d = (tHrp.Position - hrp.Position).Magnitude
-                    if d < nearestDist then nearest, nearestDist = tHrp, d end
+                    if d < nearestDist then nearest, nearestDist, nearestHead = p, d, head end
                 end
-                if nearest then
-                    firetouchinterest(hrp, nearest, 0)
-                    task.wait(0.03)
-                    firetouchinterest(hrp, nearest, 1)
-                    task.wait(0.05)
+
+                if nearestHead then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, nearestHead.Position)
+                    local tool = char:FindFirstChildOfClass("Tool")
+                    if tool then
+                        pcall(function() tool:Activate() end)
+                    end
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                    task.wait(0.02)
+                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                    task.wait(0.1)
                 end
             end
             Running.AutoKill = false
@@ -244,9 +268,6 @@ CreateToggle(MainContent, "ESP Highlight", "ESP", function(state)
     end
 end).Position = UDim2.new(0, 0, 0, 40)
 
--- ============ FAST RELOAD (быстрая, не спамит после выстрела) ============
--- Работает так: смотрит на магазин Tool, и когда патронов <= threshold — жмёт R.
--- Если магазин в игре лежит не в атрибуте Ammo/CurrentAmmo — скажи имя, поправлю.
 local function GetAmmo(tool)
     for _, name in ipairs({"Ammo", "CurrentAmmo", "AmmoCount", "Clip"}) do
         local attr = tool:GetAttribute(name)
@@ -270,7 +291,6 @@ CreateToggle(MainContent, "Fast Reload", "FastReload", function(state)
                 local tool = char and char:FindFirstChildOfClass("Tool")
                 if tool then
                     local ammo = GetAmmo(tool)
-                    -- если магазин известен — жмём R только когда пусто
                     if ammo ~= nil then
                         if ammo <= Config.ReloadThreshold then
                             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
@@ -279,8 +299,6 @@ CreateToggle(MainContent, "Fast Reload", "FastReload", function(state)
                             task.wait(0.15)
                         end
                     else
-                        -- магазин не найден: перезарядка по нажатию ЛКМ (после выстрела),
-                        -- но только раз в 0.4с и только если давно не стреляли
                         local now = tick()
                         if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and (now - lastFireTime) > 0.4 then
                             lastFireTime = now
@@ -332,17 +350,14 @@ local function RefreshPlayerList()
                 corner.CornerRadius = UDim.new(0, 4)
                 corner.Parent = btn
                 btn.MouseButton1Click:Connect(function()
-                    if Config.LockedPlayer == p then
-                        Config.LockedPlayer = nil
-                    else
-                        Config.LockedPlayer = p
-                    end
+                    ToggleLockPlayer(p)
                     RefreshPlayerList()
                 end)
             end
             btn.Position = UDim2.new(0, 5, 0, y)
-            btn.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-            btn.BackgroundColor3 = (Config.LockedPlayer == p) and Color3.fromRGB(80, 40, 40) or Color3.fromRGB(35, 35, 45)
+            local locked = InLockList(p)
+            btn.Text = (locked and "[LOCKED] " or "") .. p.DisplayName .. " (@" .. p.Name .. ")"
+            btn.BackgroundColor3 = locked and Color3.fromRGB(80, 40, 40) or Color3.fromRGB(35, 35, 45)
             btn.TextColor3 = Color3.fromRGB(200, 200, 220)
             existing[key] = nil
             y = y + 34
@@ -355,7 +370,9 @@ _G.ShivRefreshPlayers = RefreshPlayerList
 RefreshPlayerList()
 Players.PlayerAdded:Connect(function() task.wait(0.3) RefreshPlayerList() end)
 Players.PlayerRemoving:Connect(function(p)
-    if Config.LockedPlayer == p then Config.LockedPlayer = nil end
+    for i = #Config.LockedPlayers, 1, -1 do
+        if Config.LockedPlayers[i] == p then table.remove(Config.LockedPlayers, i) end
+    end
     task.wait(0.3)
     RefreshPlayerList()
 end)
@@ -433,31 +450,18 @@ for name, btn in pairs(Tabs) do
     end)
 end
 
--- ============ LOCK LOGIC (Press/Hold + bind) ============
-local function IsBindDown()
-    local bind = Config.LockBind
-    if bind == Enum.UserInputType.MouseButton2 then
-        return UserInputService:IsMouseButtonPressed(bind)
-    else
-        return UserInputService:IsKeyDown(bind)
-    end
-end
-
+-- ============ LOCK LOGIC ============
 UserInputService.InputBegan:Connect(function(input, gp)
     if gp then return end
     local bind = Config.LockBind
     local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
     if not matched then
-        -- panic key
         if input.KeyCode == Enum.KeyCode.RightShift then PanicStop() end
         return
     end
-
     if Config.LockMode == "Press" then
-        -- press: toggle
         Config.LockActive = not Config.LockActive
     else
-        -- hold: start
         Config.LockActive = true
     end
 end)
@@ -470,14 +474,28 @@ UserInputService.InputEnded:Connect(function(input, gp)
     end
 end)
 
--- ============ LOCK CAMERA ============
+-- ============ MULTI LOCK CAMERA ============
 RunService.RenderStepped:Connect(function()
     if not Config.LockActive then return end
-    local p = Config.LockedPlayer
-    if not p or not p.Character then return end
-    local tHead = p.Character:FindFirstChild("Head")
-    if tHead then
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHead.Position)
+    if #Config.LockedPlayers == 0 then return end
+    local sum = Vector3.new(0, 0, 0)
+    local count = 0
+    for i = #Config.LockedPlayers, 1, -1 do
+        local p = Config.LockedPlayers[i]
+        if not p or not p.Parent then
+            table.remove(Config.LockedPlayers, i)
+            continue
+        end
+        local c = p.Character
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        local head = c and c:FindFirstChild("Head")
+        if hum and hum.Health > 0 and head then
+            sum = sum + head.Position
+            count = count + 1
+        end
+    end
+    if count > 0 then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, sum / count)
     end
 end)
 

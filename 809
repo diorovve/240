@@ -1,7 +1,6 @@
 -- Dan FFA Script | Luau | Roblox Executor (dff)
 -- Devs: diorovve & sobhanlover
--- Features: AutoKill, ESP, Lock-on, Fast Reload, Fly, Panic Stop
--- Perf: no frame-loop spam, throttled cycles, no double-start
+-- Features: AutoKill, ESP, Lock-on (press/hold + bind), Fast Reload, Fly, Panic Stop
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -19,13 +18,13 @@ local Config = {
     FlySpeed = 120,
     AutoKillRange = 50,
     ESPColor = Color3.fromRGB(255, 0, 0),
+    LockMode = "Hold",          -- "Hold" | "Press"
+    LockBind = Enum.KeyCode.Q,  -- Q | E | RMB
+    LockActive = false,
+    ReloadThreshold = 1,        -- перезарядка когда патронов <= этого
 }
 
--- Cycle guards: prevent double-start on rapid toggle
-local Running = {
-    AutoKill = false,
-    FastReload = false,
-}
+local Running = { AutoKill = false, FastReload = false }
 
 -- ============ PANIC ============
 local function PanicStop()
@@ -34,14 +33,13 @@ local function PanicStop()
     Config.FastReload = false
     Config.Fly = false
     Config.LockedPlayer = nil
-
+    Config.LockActive = false
     for _, p in ipairs(Players:GetPlayers()) do
         if p.Character then
             local hl = p.Character:FindFirstChild("ShivESP")
             if hl then hl:Destroy() end
         end
     end
-
     local char = LocalPlayer.Character
     if char then
         local hrp = char:FindFirstChild("HumanoidRootPart")
@@ -51,7 +49,6 @@ local function PanicStop()
             end
         end
     end
-
     if _G.ShivRefreshUI then _G.ShivRefreshUI() end
 end
 
@@ -69,7 +66,6 @@ MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
-
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
 UICorner.Parent = MainFrame
@@ -108,16 +104,16 @@ TabFrame.BackgroundTransparency = 1
 TabFrame.Parent = MainFrame
 
 local Tabs = {}
-local TabNames = {"Main", "Players", "Fly"}
+local TabNames = {"Main", "Players", "Lock", "Fly"}
 for i, name in ipairs(TabNames) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1/3, -4, 1, 0)
-    btn.Position = UDim2.new((i-1)/3, 2, 0, 0)
+    btn.Size = UDim2.new(1/#TabNames, -4, 1, 0)
+    btn.Position = UDim2.new((i-1)/#TabNames, 2, 0, 0)
     btn.BackgroundColor3 = (name == "Main") and Color3.fromRGB(50, 50, 70) or Color3.fromRGB(35, 35, 45)
     btn.Text = name
     btn.TextColor3 = Color3.fromRGB(200, 200, 220)
     btn.Font = Enum.Font.Gotham
-    btn.TextSize = 12
+    btn.TextSize = 11
     btn.Parent = TabFrame
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
@@ -144,13 +140,38 @@ local function CreateToggle(parent, text, key, callback)
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
     corner.Parent = btn
-    local entry = { button = btn, label = text, key = key }
-    table.insert(ToggleRegistry, entry)
+    table.insert(ToggleRegistry, { button = btn, label = text, key = key })
     btn.MouseButton1Click:Connect(function()
         Config[key] = not Config[key]
         btn.Text = text .. ": " .. (Config[key] and "ON" or "OFF")
         btn.BackgroundColor3 = Config[key] and Color3.fromRGB(40, 70, 50) or Color3.fromRGB(35, 35, 45)
         if callback then callback(Config[key]) end
+    end)
+    return btn
+end
+
+local function CreateChoice(parent, text, key, options, onChange)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+    btn.TextColor3 = Color3.fromRGB(180, 180, 200)
+    btn.Font = Enum.Font.Gotham
+    btn.TextSize = 12
+    btn.Parent = parent
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 6)
+    corner.Parent = btn
+    local idx = 1
+    for i, o in ipairs(options) do if o.value == Config[key] then idx = i end end
+    local function render()
+        btn.Text = text .. ": " .. options[idx].label
+    end
+    render()
+    btn.MouseButton1Click:Connect(function()
+        idx = idx % #options + 1
+        Config[key] = options[idx].value
+        render()
+        if onChange then onChange(Config[key]) end
     end)
     return btn
 end
@@ -165,14 +186,14 @@ _G.ShivRefreshUI = function()
     if _G.ShivRefreshPlayers then _G.ShivRefreshPlayers() end
 end
 
--- ============ AUTO KILL (throttled, nearest-only) ============
-local AutoKillContent = Instance.new("Frame")
-AutoKillContent.Size = UDim2.new(1, 0, 1, 0)
-AutoKillContent.BackgroundTransparency = 1
-AutoKillContent.Visible = true
-AutoKillContent.Parent = ContentFrame
+-- ============ MAIN TAB ============
+local MainContent = Instance.new("Frame")
+MainContent.Size = UDim2.new(1, 0, 1, 0)
+MainContent.BackgroundTransparency = 1
+MainContent.Visible = true
+MainContent.Parent = ContentFrame
 
-CreateToggle(AutoKillContent, "Auto Kill", "AutoKill", function(state)
+CreateToggle(MainContent, "Auto Kill", "AutoKill", function(state)
     if state and not Running.AutoKill then
         Running.AutoKill = true
         task.spawn(function()
@@ -181,8 +202,6 @@ CreateToggle(AutoKillContent, "Auto Kill", "AutoKill", function(state)
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if not hrp then continue end
-
-                -- find nearest valid target in range
                 local nearest, nearestDist = nil, Config.AutoKillRange
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p == LocalPlayer then continue end
@@ -195,7 +214,6 @@ CreateToggle(AutoKillContent, "Auto Kill", "AutoKill", function(state)
                     local d = (tHrp.Position - hrp.Position).Magnitude
                     if d < nearestDist then nearest, nearestDist = tHrp, d end
                 end
-
                 if nearest then
                     firetouchinterest(hrp, nearest, 0)
                     task.wait(0.03)
@@ -208,7 +226,7 @@ CreateToggle(AutoKillContent, "Auto Kill", "AutoKill", function(state)
     end
 end).Position = UDim2.new(0, 0, 0, 0)
 
-CreateToggle(AutoKillContent, "ESP Highlight", "ESP", function(state)
+CreateToggle(MainContent, "ESP Highlight", "ESP", function(state)
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local hl = p.Character:FindFirstChild("ShivESP")
@@ -226,17 +244,52 @@ CreateToggle(AutoKillContent, "ESP Highlight", "ESP", function(state)
     end
 end).Position = UDim2.new(0, 0, 0, 40)
 
-CreateToggle(AutoKillContent, "Fast Reload", "FastReload", function(state)
+-- ============ FAST RELOAD (быстрая, не спамит после выстрела) ============
+-- Работает так: смотрит на магазин Tool, и когда патронов <= threshold — жмёт R.
+-- Если магазин в игре лежит не в атрибуте Ammo/CurrentAmmo — скажи имя, поправлю.
+local function GetAmmo(tool)
+    for _, name in ipairs({"Ammo", "CurrentAmmo", "AmmoCount", "Clip"}) do
+        local attr = tool:GetAttribute(name)
+        if type(attr) == "number" then return attr end
+        local child = tool:FindFirstChild(name)
+        if child and child:IsA("ValueBase") and type(child.Value) == "number" then
+            return child.Value
+        end
+    end
+    return nil
+end
+
+CreateToggle(MainContent, "Fast Reload", "FastReload", function(state)
     if state and not Running.FastReload then
         Running.FastReload = true
         task.spawn(function()
+            local lastFireTime = 0
             while Config.FastReload do
-                task.wait(0.3)
+                task.wait(0.1)
                 local char = LocalPlayer.Character
-                if char and char:FindFirstChildOfClass("Tool") then
-                    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                    task.wait(0.03)
-                    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                local tool = char and char:FindFirstChildOfClass("Tool")
+                if tool then
+                    local ammo = GetAmmo(tool)
+                    -- если магазин известен — жмём R только когда пусто
+                    if ammo ~= nil then
+                        if ammo <= Config.ReloadThreshold then
+                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                            task.wait(0.03)
+                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                            task.wait(0.15)
+                        end
+                    else
+                        -- магазин не найден: перезарядка по нажатию ЛКМ (после выстрела),
+                        -- но только раз в 0.4с и только если давно не стреляли
+                        local now = tick()
+                        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) and (now - lastFireTime) > 0.4 then
+                            lastFireTime = now
+                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                            task.wait(0.03)
+                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+                            task.wait(0.15)
+                        end
+                    end
                 end
             end
             Running.FastReload = false
@@ -244,7 +297,7 @@ CreateToggle(AutoKillContent, "Fast Reload", "FastReload", function(state)
     end
 end).Position = UDim2.new(0, 0, 0, 80)
 
--- ============ PLAYERS ============
+-- ============ PLAYERS TAB ============
 local PlayersContent = Instance.new("Frame")
 PlayersContent.Size = UDim2.new(1, 0, 1, 0)
 PlayersContent.BackgroundTransparency = 1
@@ -295,7 +348,6 @@ local function RefreshPlayerList()
             y = y + 34
         end
     end
-    -- clean stale
     for _, btn in pairs(existing) do btn:Destroy() end
     PlayerList.CanvasSize = UDim2.new(0, 0, 0, y)
 end
@@ -308,7 +360,25 @@ Players.PlayerRemoving:Connect(function(p)
     RefreshPlayerList()
 end)
 
--- ============ FLY ============
+-- ============ LOCK TAB ============
+local LockContent = Instance.new("Frame")
+LockContent.Size = UDim2.new(1, 0, 1, 0)
+LockContent.BackgroundTransparency = 1
+LockContent.Visible = false
+LockContent.Parent = ContentFrame
+
+CreateChoice(LockContent, "Lock Mode", "LockMode", {
+    {label = "Hold", value = "Hold"},
+    {label = "Press", value = "Press"},
+}).Position = UDim2.new(0, 0, 0, 0)
+
+CreateChoice(LockContent, "Lock Bind", "LockBind", {
+    {label = "Q",   value = Enum.KeyCode.Q},
+    {label = "E",   value = Enum.KeyCode.E},
+    {label = "RMB", value = Enum.UserInputType.MouseButton2},
+}).Position = UDim2.new(0, 0, 0, 40)
+
+-- ============ FLY TAB ============
 local FlyContent = Instance.new("Frame")
 FlyContent.Size = UDim2.new(1, 0, 1, 0)
 FlyContent.BackgroundTransparency = 1
@@ -356,27 +426,58 @@ for name, btn in pairs(Tabs) do
         for n, b in pairs(Tabs) do
             b.BackgroundColor3 = (n == name) and Color3.fromRGB(50, 50, 70) or Color3.fromRGB(35, 35, 45)
         end
-        AutoKillContent.Visible = (name == "Main")
+        MainContent.Visible = (name == "Main")
         PlayersContent.Visible = (name == "Players")
+        LockContent.Visible = (name == "Lock")
         FlyContent.Visible = (name == "Fly")
     end)
 end
 
--- ============ LOCK-ON ============
-RunService.RenderStepped:Connect(function()
-    if Config.LockedPlayer and Config.LockedPlayer.Character then
-        local tHead = Config.LockedPlayer.Character:FindFirstChild("Head")
-        if tHead then
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHead.Position)
-        end
+-- ============ LOCK LOGIC (Press/Hold + bind) ============
+local function IsBindDown()
+    local bind = Config.LockBind
+    if bind == Enum.UserInputType.MouseButton2 then
+        return UserInputService:IsMouseButtonPressed(bind)
+    else
+        return UserInputService:IsKeyDown(bind)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if gp then return end
+    local bind = Config.LockBind
+    local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
+    if not matched then
+        -- panic key
+        if input.KeyCode == Enum.KeyCode.RightShift then PanicStop() end
+        return
+    end
+
+    if Config.LockMode == "Press" then
+        -- press: toggle
+        Config.LockActive = not Config.LockActive
+    else
+        -- hold: start
+        Config.LockActive = true
     end
 end)
 
--- ============ PANIC KEY ============
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.RightShift then
-        PanicStop()
+UserInputService.InputEnded:Connect(function(input, gp)
+    local bind = Config.LockBind
+    local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
+    if matched and Config.LockMode == "Hold" then
+        Config.LockActive = false
+    end
+end)
+
+-- ============ LOCK CAMERA ============
+RunService.RenderStepped:Connect(function()
+    if not Config.LockActive then return end
+    local p = Config.LockedPlayer
+    if not p or not p.Character then return end
+    local tHead = p.Character:FindFirstChild("Head")
+    if tHead then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, tHead.Position)
     end
 end)
 

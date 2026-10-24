@@ -1,6 +1,6 @@
--- Dan FFA Script | Luau | Roblox Executor (dff)
+-- Dan FFA | Luau | Roblox Executor
+-- Features: Fly (kick-safe), Multi Lock-on, Fast Reload, ESP, Auto-Shoot, Panic
 -- Devs: diorovve & sobhanlover
--- Single-page menu. ESP only on selected players. Multi lock. Fast reload. Kick-safe fly.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -12,7 +12,7 @@ local Camera = workspace.CurrentCamera
 local Config = {
     AutoKill = false,
     ESP = false,
-    ESPTargets = {},          -- подсветка ТОЛЬКО этих игроков
+    ESPTargets = {},
     LockedPlayers = {},
     FastReload = false,
     Fly = false,
@@ -44,7 +44,6 @@ local function ToggleList(list, p)
     return false
 end
 
--- ============ ESP helper ============
 local function ApplyESPTo(p)
     if not p.Character then return end
     local shouldHave = Config.ESP and InESPList(p)
@@ -67,7 +66,6 @@ local function RefreshAllESP()
     end
 end
 
--- ============ PANIC ============
 local function PanicStop()
     Config.AutoKill = false
     Config.ESP = false
@@ -94,19 +92,20 @@ local function PanicStop()
     if _G.ShivRefreshUI then _G.ShivRefreshUI() end
 end
 
--- ============ GUI (single page) ============
+-- ============ GUI ============
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "DanFFA_Menu"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = game:GetService("CoreGui")
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 300, 0, 540)
+MainFrame.Size = UDim2.new(0, 300, 0, 560)
 MainFrame.Position = UDim2.new(0, 20, 0, 20)
 MainFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
 MainFrame.Draggable = true
+MainFrame.ClipsDescendants = true
 MainFrame.Parent = ScreenGui
 local UICorner = Instance.new("UICorner")
 UICorner.CornerRadius = UDim.new(0, 8)
@@ -115,11 +114,12 @@ UICorner.Parent = MainFrame
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
-Title.Text = "  Dan FFA | by diorovve & sobhanlover"
+Title.Text = "  Dan FFA | diorovve & sobhanlover"
 Title.TextColor3 = Color3.fromRGB(200, 200, 255)
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 12
+Title.ZIndex = 2
 Title.Parent = MainFrame
 local TitleCorner = Instance.new("UICorner")
 TitleCorner.CornerRadius = UDim.new(0, 8)
@@ -133,6 +133,7 @@ PanicBtn.Text = "PANIC STOP"
 PanicBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
 PanicBtn.Font = Enum.Font.GothamBold
 PanicBtn.TextSize = 12
+PanicBtn.ZIndex = 2
 PanicBtn.Parent = MainFrame
 local PanicCorner = Instance.new("UICorner")
 PanicCorner.CornerRadius = UDim.new(0, 6)
@@ -147,6 +148,7 @@ Scroll.BorderSizePixel = 0
 Scroll.ScrollBarThickness = 4
 Scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 Scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+Scroll.ZIndex = 2
 Scroll.Parent = MainFrame
 
 local Layout = Instance.new("UIListLayout")
@@ -163,6 +165,7 @@ local function CreateToggle(text, key, callback)
     btn.TextColor3 = Color3.fromRGB(180, 180, 200)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
+    btn.ZIndex = 3
     btn.Parent = Scroll
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
@@ -184,6 +187,7 @@ local function CreateChoice(text, key, options, onChange)
     btn.TextColor3 = Color3.fromRGB(180, 180, 200)
     btn.Font = Enum.Font.Gotham
     btn.TextSize = 12
+    btn.ZIndex = 3
     btn.Parent = Scroll
     local corner = Instance.new("UICorner")
     corner.CornerRadius = UDim.new(0, 6)
@@ -210,6 +214,7 @@ local function CreateHeader(text)
     h.TextColor3 = Color3.fromRGB(140, 140, 160)
     h.Font = Enum.Font.GothamBold
     h.TextSize = 11
+    h.ZIndex = 3
     h.Parent = Scroll
     return h
 end
@@ -224,7 +229,7 @@ _G.ShivRefreshUI = function()
     if _G.ShivRefreshPlayers then _G.ShivRefreshPlayers() end
 end
 
--- ============ CONTENT (flat, single page) ============
+-- ============ Main ============
 CreateHeader("Main")
 CreateToggle("Auto Kill (Shoot)", "AutoKill", function(state)
     if state and not Running.AutoKill then
@@ -235,7 +240,7 @@ CreateToggle("Auto Kill (Shoot)", "AutoKill", function(state)
                 local char = LocalPlayer.Character
                 local hrp = char and char:FindFirstChild("HumanoidRootPart")
                 if not hrp then continue end
-                local nearest, nearestDist, nearestHead = nil, Config.AutoKillRange, nil
+                local nearestHead, nearestDist = nil, Config.AutoKillRange
                 for _, p in ipairs(Players:GetPlayers()) do
                     if p == LocalPlayer then continue end
                     local c = p.Character
@@ -246,15 +251,22 @@ CreateToggle("Auto Kill (Shoot)", "AutoKill", function(state)
                     local tHrp = c:FindFirstChild("HumanoidRootPart")
                     if not head or not tHrp then continue end
                     local d = (tHrp.Position - hrp.Position).Magnitude
-                    if d < nearestDist then nearest, nearestDist, nearestHead = p, d, head end
+                    if d < nearestDist then
+                        nearestHead = head
+                        nearestDist = d
+                    end
                 end
                 if nearestHead then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, nearestHead.Position)
+                    if not Config.LockActive then
+                        Camera.CFrame = CFrame.new(Camera.CFrame.Position, nearestHead.Position)
+                    end
                     local tool = char:FindFirstChildOfClass("Tool")
                     if tool then pcall(function() tool:Activate() end) end
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-                    task.wait(0.02)
-                    VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                    pcall(function()
+                        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+                        task.wait(0.02)
+                        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+                    end)
                     task.wait(0.1)
                 end
             end
@@ -318,6 +330,7 @@ CreateToggle("Fast Reload", "FastReload", function(state)
     end
 end)
 
+-- ============ Lock ============
 CreateHeader("Lock")
 CreateChoice("Lock Mode", "LockMode", {
     {label = "Hold", value = "Hold"},
@@ -329,47 +342,58 @@ CreateChoice("Lock Bind", "LockBind", {
     {label = "RMB", value = Enum.UserInputType.MouseButton2},
 })
 
+-- ============ Fly ============
 CreateHeader("Fly")
-CreateToggle("Fly (Space/Ctrl)", "Fly", function(state)
+local function StartFly()
     local char = LocalPlayer.Character
     if not char then return end
     local hrp = char:FindFirstChild("HumanoidRootPart")
     local hum = char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
+    if hrp:FindFirstChild("ShivFlyVel") then return end
+    local bodyGyro = Instance.new("BodyGyro")
+    bodyGyro.Name = "ShivFlyGyro"
+    bodyGyro.P = 3e4
+    bodyGyro.D = 500
+    bodyGyro.MaxTorque = Vector3.new(4e5, 4e5, 4e5)
+    bodyGyro.CFrame = hrp.CFrame
+    bodyGyro.Parent = hrp
+    local bodyVel = Instance.new("BodyVelocity")
+    bodyVel.Name = "ShivFlyVel"
+    bodyVel.MaxForce = Vector3.new(2e5, 2e5, 2e5)
+    bodyVel.Velocity = Vector3.new(0, 0, 0)
+    bodyVel.Parent = hrp
+    local currentVel = Vector3.new(0, 0, 0)
+    local flyConn
+    flyConn = RunService.Heartbeat:Connect(function(dt)
+        if not Config.Fly or not hrp or not hrp.Parent or not hum or not hum.Parent then
+            if flyConn then flyConn:Disconnect() end
+            if bodyGyro and bodyGyro.Parent then bodyGyro:Destroy() end
+            if bodyVel and bodyVel.Parent then bodyVel:Destroy() end
+            return
+        end
+        if hum.Health <= 0 then return end
+        bodyGyro.CFrame = Camera.CFrame
+        local desired = Vector3.new(0, 0, 0)
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then desired = desired + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then desired = desired - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then desired = desired - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then desired = desired + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then desired = desired + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then desired = desired - Vector3.new(0, 1, 0) end
+        if desired.Magnitude > 0 then desired = desired.Unit * Config.FlySpeed end
+        currentVel = currentVel:Lerp(desired, Config.FlyAccel)
+        bodyVel.Velocity = currentVel
+    end)
+end
+
+CreateToggle("Fly (Space/Ctrl)", "Fly", function(state)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
     if state then
-        local bodyGyro = Instance.new("BodyGyro")
-        bodyGyro.Name = "ShivFlyGyro"
-        bodyGyro.P = 3e4
-        bodyGyro.D = 500
-        bodyGyro.MaxTorque = Vector3.new(4e5, 4e5, 4e5)
-        bodyGyro.CFrame = hrp.CFrame
-        bodyGyro.Parent = hrp
-        local bodyVel = Instance.new("BodyVelocity")
-        bodyVel.Name = "ShivFlyVel"
-        bodyVel.MaxForce = Vector3.new(2e5, 2e5, 2e5)
-        bodyVel.Velocity = Vector3.new(0, 0, 0)
-        bodyVel.Parent = hrp
-        local currentVel = Vector3.new(0, 0, 0)
-        local flyConn = RunService.Heartbeat:Connect(function(dt)
-            if not Config.Fly or not hrp.Parent or not hum.Parent then
-                flyConn:Disconnect()
-                if bodyGyro.Parent then bodyGyro:Destroy() end
-                if bodyVel.Parent then bodyVel:Destroy() end
-                return
-            end
-            if hum.Health <= 0 then return end
-            bodyGyro.CFrame = Camera.CFrame
-            local desired = Vector3.new(0, 0, 0)
-            if UserInputService:IsKeyDown(Enum.KeyCode.W) then desired = desired + Camera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.S) then desired = desired - Camera.CFrame.LookVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.A) then desired = desired - Camera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.D) then desired = desired + Camera.CFrame.RightVector end
-            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then desired = desired + Vector3.new(0, 1, 0) end
-            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then desired = desired - Vector3.new(0, 1, 0) end
-            if desired.Magnitude > 0 then desired = desired.Unit * Config.FlySpeed end
-            currentVel = currentVel:Lerp(desired, Config.FlyAccel)
-            bodyVel.Velocity = currentVel
-        end)
+        StartFly()
     else
         for _, v in ipairs(hrp:GetChildren()) do
             if v.Name == "ShivFlyVel" or v.Name == "ShivFlyGyro" then v:Destroy() end
@@ -377,11 +401,17 @@ CreateToggle("Fly (Space/Ctrl)", "Fly", function(state)
     end
 end)
 
--- ============ PLAYERS LIST (inside same page) ============
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    if Config.Fly then StartFly() end
+end)
+
+-- ============ Players ============
 CreateHeader("Players  (LOCK / ESP)")
 local PlayerList = Instance.new("Frame")
 PlayerList.Size = UDim2.new(1, -4, 0, 320)
 PlayerList.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+PlayerList.ZIndex = 3
 PlayerList.Parent = Scroll
 local PlayerListCorner = Instance.new("UICorner")
 PlayerListCorner.CornerRadius = UDim.new(0, 6)
@@ -394,156 +424,76 @@ PScroll.BackgroundTransparency = 1
 PScroll.ScrollBarThickness = 3
 PScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
 PScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+PScroll.ZIndex = 4
 PScroll.Parent = PlayerList
 local PLayout = Instance.new("UIListLayout")
 PLayout.Padding = UDim.new(0, 3)
 PLayout.Parent = PScroll
 
 local function RefreshPlayerList()
-    local existing = {}
-    for _, child in ipairs(PScroll:GetChildren()) do
-        if child:IsA("Frame") then existing[child.Name] = child end
-    end
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer then
-            local key = "P_" .. p.UserId
-            local row = existing[key]
-            if not row then
-                row = Instance.new("Frame")
-                row.Name = key
-                row.Size = UDim2.new(1, -4, 0, 28)
-                row.BackgroundTransparency = 1
-                row.Parent = PScroll
-
-                local nameLbl = Instance.new("TextLabel")
-                nameLbl.Name = "Name"
-                nameLbl.Size = UDim2.new(1, -110, 1, 0)
-                nameLbl.Position = UDim2.new(0, 4, 0, 0)
-                nameLbl.BackgroundTransparency = 1
-                nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-                nameLbl.TextColor3 = Color3.fromRGB(200, 200, 220)
-                nameLbl.Font = Enum.Font.Gotham
-                nameLbl.TextSize = 11
-                nameLbl.Parent = row
-
-                local lockBtn = Instance.new("TextButton")
-                lockBtn.Name = "LockBtn"
-                lockBtn.Size = UDim2.new(0, 48, 1, -4)
-                lockBtn.Position = UDim2.new(1, -108, 0, 2)
-                lockBtn.Font = Enum.Font.GothamBold
-                lockBtn.TextSize = 10
-                lockBtn.Parent = row
-                local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 4); c1.Parent = lockBtn
-
-                local espBtn = Instance.new("TextButton")
-                espBtn.Name = "EspBtn"
-                espBtn.Size = UDim2.new(0, 48, 1, -4)
-                espBtn.Position = UDim2.new(1, -56, 0, 2)
-                espBtn.Font = Enum.Font.GothamBold
-                espBtn.TextSize = 10
-                espBtn.Parent = row
-                local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0, 4); c2.Parent = espBtn
-
-                lockBtn.MouseButton1Click:Connect(function()
-                    ToggleList(Config.LockedPlayers, p)
-                    RefreshPlayerList()
-                end)
-                espBtn.MouseButton1Click:Connect(function()
-                    ToggleList(Config.ESPTargets, p)
-                    ApplyESPTo(p)
-                    RefreshPlayerList()
-                end)
-            end
-            local nameLbl = row:FindFirstChild("Name")
-            local lockBtn = row:FindFirstChild("LockBtn")
-            local espBtn = row:FindFirstChild("EspBtn")
-            local locked = InLockList(p)
-            local espOn = InESPList(p)
-            nameLbl.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-            nameLbl.TextColor3 = locked and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(200, 200, 220)
-            lockBtn.Text = locked and "LOCK ✓" or "LOCK"
-            lockBtn.BackgroundColor3 = locked and Color3.fromRGB(120, 30, 30) or Color3.fromRGB(45, 45, 55)
-            lockBtn.TextColor3 = Color3.fromRGB(240, 220, 220)
-            espBtn.Text = espOn and "ESP ✓" or "ESP"
-            espBtn.BackgroundColor3 = espOn and Color3.fromRGB(30, 100, 50) or Color3.fromRGB(45, 45, 55)
-            espBtn.TextColor3 = Color3.fromRGB(220, 240, 220)
-            existing[key] = nil
+    pcall(function()
+        local existing = {}
+        for _, child in ipairs(PScroll:GetChildren()) do
+            if child:IsA("Frame") then existing[child.Name] = child end
         end
-    end
-    for _, row in pairs(existing) do row:Destroy() end
-end
-_G.ShivRefreshPlayers = RefreshPlayerList
-RefreshPlayerList()
-Players.PlayerAdded:Connect(function() task.wait(0.3) RefreshPlayerList() end)
-Players.PlayerRemoving:Connect(function(p)
-    for i = #Config.LockedPlayers, 1, -1 do
-        if Config.LockedPlayers[i] == p then table.remove(Config.LockedPlayers, i) end
-    end
-    for i = #Config.ESPTargets, 1, -1 do
-        if Config.ESPTargets[i] == p then table.remove(Config.ESPTargets, i) end
-    end
-    task.wait(0.3)
-    RefreshPlayerList()
-end)
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local key = "P_" .. p.UserId
+                local row = existing[key]
+                if not row then
+                    row = Instance.new("Frame")
+                    row.Name = key
+                    row.Size = UDim2.new(1, -4, 0, 28)
+                    row.BackgroundTransparency = 1
+                    row.ZIndex = 5
+                    row.Parent = PScroll
 
--- ============ LOCK INPUT ============
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    local bind = Config.LockBind
-    local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
-    if not matched then
-        if input.KeyCode == Enum.KeyCode.RightShift then PanicStop() end
-        return
-    end
-    if Config.LockMode == "Press" then
-        Config.LockActive = not Config.LockActive
-    else
-        Config.LockActive = true
-    end
-end)
-UserInputService.InputEnded:Connect(function(input, gp)
-    local bind = Config.LockBind
-    local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
-    if matched and Config.LockMode == "Hold" then
-        Config.LockActive = false
-    end
-end)
+                    local nameLbl = Instance.new("TextLabel")
+                    nameLbl.Name = "Name"
+                    nameLbl.Size = UDim2.new(1, -110, 1, 0)
+                    nameLbl.Position = UDim2.new(0, 4, 0, 0)
+                    nameLbl.BackgroundTransparency = 1
+                    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+                    nameLbl.TextColor3 = Color3.fromRGB(200, 200, 220)
+                    nameLbl.Font = Enum.Font.Gotham
+                    nameLbl.TextSize = 11
+                    nameLbl.ZIndex = 5
+                    nameLbl.Parent = row
 
--- ============ MULTI LOCK CAMERA ============
-RunService.RenderStepped:Connect(function()
-    if not Config.LockActive then return end
-    if #Config.LockedPlayers == 0 then return end
-    local sum = Vector3.new(0, 0, 0)
-    local count = 0
-    for i = #Config.LockedPlayers, 1, -1 do
-        local p = Config.LockedPlayers[i]
-        if not p or not p.Parent then
-            table.remove(Config.LockedPlayers, i)
-            continue
-        end
-        local c = p.Character
-        local hum = c and c:FindFirstChildOfClass("Humanoid")
-        local head = c and c:FindFirstChild("Head")
-        if hum and hum.Health > 0 and head then
-            sum = sum + head.Position
-            count = count + 1
-        end
-    end
-    if count > 0 then
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, sum / count)
-    end
-end)
+                    local lockBtn = Instance.new("TextButton")
+                    lockBtn.Name = "LockBtn"
+                    lockBtn.Size = UDim2.new(0, 48, 1, -4)
+                    lockBtn.Position = UDim2.new(1, -108, 0, 2)
+                    lockBtn.Font = Enum.Font.GothamBold
+                    lockBtn.TextSize = 10
+                    lockBtn.ZIndex = 6
+                    lockBtn.Parent = row
+                    local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 4); c1.Parent = lockBtn
 
--- ============ ESP ON RESPAWN ============
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(function(char)
-        task.wait(1)
-        ApplyESPTo(p)
-    end)
-end)
-for _, p in ipairs(Players:GetPlayers()) do
-    p.CharacterAdded:Connect(function(char)
-        task.wait(1)
-        ApplyESPTo(p)
-    end)
-end
+                    local espBtn = Instance.new("TextButton")
+                    espBtn.Name = "EspBtn"
+                    espBtn.Size = UDim2.new(0, 48, 1, -4)
+                    espBtn.Position = UDim2.new(1, -56, 0, 2)
+                    espBtn.Font = Enum.Font.GothamBold
+                    espBtn.TextSize = 10
+                    espBtn.ZIndex = 6
+                    espBtn.Parent = row
+                    local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0, 4); c2.Parent = espBtn
+
+                    lockBtn.MouseButton1Click:Connect(function()
+                        ToggleList(Config.LockedPlayers, p)
+                        RefreshPlayerList()
+                    end)
+                    espBtn.MouseButton1Click:Connect(function()
+                        ToggleList(Config.ESPTargets, p)
+                        ApplyESPTo(p)
+                        RefreshPlayerList()
+                    end)
+                end
+                local nameLbl = row:FindFirstChild("Name")
+                local lockBtn = row:FindFirstChild("LockBtn")
+                local espBtn = row:FindFirstChild("EspBtn")
+                local locked = InLockList(p)
+                local espOn = InESPList(p)
+                nameLbl.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+                nameLbl.TextColor3 = locked and Color3.fromRGB(255, 150, 150)

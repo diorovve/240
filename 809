@@ -344,3 +344,196 @@ end)
 -- ============ Players ============
 CreateHeader("Players  (LOCK / ESP)")
 local PlayerList = Instance.new("Frame")
+PlayerList.Size = UDim2.new(1, -4, 0, 320)
+PlayerList.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+PlayerList.ZIndex = 3
+PlayerList.Parent = Scroll
+local PlayerListCorner = Instance.new("UICorner")
+PlayerListCorner.CornerRadius = UDim.new(0, 6)
+PlayerListCorner.Parent = PlayerList
+
+local PScroll = Instance.new("ScrollingFrame")
+PScroll.Size = UDim2.new(1, -8, 1, -8)
+PScroll.Position = UDim2.new(0, 4, 0, 4)
+PScroll.BackgroundTransparency = 1
+PScroll.ScrollBarThickness = 3
+PScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+PScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+PScroll.ZIndex = 4
+PScroll.Parent = PlayerList
+local PLayout = Instance.new("UIListLayout")
+PLayout.Padding = UDim.new(0, 3)
+PLayout.Parent = PScroll
+
+local function RefreshPlayerList()
+    pcall(function()
+        local existing = {}
+        for _, child in ipairs(PScroll:GetChildren()) do
+            if child:IsA("Frame") then existing[child.Name] = child end
+        end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                local key = "P_" .. p.UserId
+                local row = existing[key]
+                if not row then
+                    row = Instance.new("Frame")
+                    row.Name = key
+                    row.Size = UDim2.new(1, -4, 0, 28)
+                    row.BackgroundTransparency = 1
+                    row.ZIndex = 5
+                    row.Parent = PScroll
+
+                    local nameLbl = Instance.new("TextLabel")
+                    nameLbl.Name = "Name"
+                    nameLbl.Size = UDim2.new(1, -110, 1, 0)
+                    nameLbl.Position = UDim2.new(0, 4, 0, 0)
+                    nameLbl.BackgroundTransparency = 1
+                    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
+                    nameLbl.TextColor3 = Color3.fromRGB(200, 200, 220)
+                    nameLbl.Font = Enum.Font.Gotham
+                    nameLbl.TextSize = 11
+                    nameLbl.ZIndex = 5
+                    nameLbl.Parent = row
+
+                    local lockBtn = Instance.new("TextButton")
+                    lockBtn.Name = "LockBtn"
+                    lockBtn.Size = UDim2.new(0, 48, 1, -4)
+                    lockBtn.Position = UDim2.new(1, -108, 0, 2)
+                    lockBtn.Font = Enum.Font.GothamBold
+                    lockBtn.TextSize = 10
+                    lockBtn.ZIndex = 6
+                    lockBtn.Parent = row
+                    local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 4); c1.Parent = lockBtn
+
+                    local espBtn = Instance.new("TextButton")
+                    espBtn.Name = "EspBtn"
+                    espBtn.Size = UDim2.new(0, 48, 1, -4)
+                    espBtn.Position = UDim2.new(1, -56, 0, 2)
+                    espBtn.Font = Enum.Font.GothamBold
+                    espBtn.TextSize = 10
+                    espBtn.ZIndex = 6
+                    espBtn.Parent = row
+                    local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0, 4); c2.Parent = espBtn
+
+                    lockBtn.MouseButton1Click:Connect(function()
+                        ToggleList(Config.LockedPlayers, p)
+                        RefreshPlayerList()
+                    end)
+                    espBtn.MouseButton1Click:Connect(function()
+                        ToggleList(Config.ESPTargets, p)
+                        ApplyESPTo(p)
+                        RefreshPlayerList()
+                    end)
+                end
+                local nameLbl = row:FindFirstChild("Name")
+                local lockBtn = row:FindFirstChild("LockBtn")
+                local espBtn = row:FindFirstChild("EspBtn")
+                local locked = InLockList(p)
+                local espOn = InESPList(p)
+                nameLbl.Text = p.DisplayName .. " (@" .. p.Name .. ")"
+                nameLbl.TextColor3 = locked and Color3.fromRGB(255, 150, 150) or Color3.fromRGB(200, 200, 220)
+                lockBtn.Text = locked and "LOCK ✓" or "LOCK"
+                lockBtn.BackgroundColor3 = locked and Color3.fromRGB(120, 30, 30) or Color3.fromRGB(45, 45, 55)
+                lockBtn.TextColor3 = Color3.fromRGB(240, 220, 220)
+                espBtn.Text = espOn and "ESP ✓" or "ESP"
+                espBtn.BackgroundColor3 = espOn and Color3.fromRGB(30, 100, 50) or Color3.fromRGB(45, 45, 55)
+                espBtn.TextColor3 = Color3.fromRGB(220, 240, 220)
+                existing[key] = nil
+            end
+        end
+        for _, row in pairs(existing) do row:Destroy() end
+    end)
+end
+_G.ShivRefreshPlayers = RefreshPlayerList
+RefreshPlayerList()
+Players.PlayerAdded:Connect(function() task.wait(0.3) RefreshPlayerList() end)
+Players.PlayerRemoving:Connect(function(p)
+    for i = #Config.LockedPlayers, 1, -1 do
+        if Config.LockedPlayers[i] == p then table.remove(Config.LockedPlayers, i) end
+    end
+    for i = #Config.ESPTargets, 1, -1 do
+        if Config.ESPTargets[i] == p then table.remove(Config.ESPTargets, i) end
+    end
+    task.wait(0.3)
+    RefreshPlayerList()
+end)
+
+-- ============ Lock input & Menu Toggle ============
+UserInputService.InputBegan:Connect(function(input, gp)
+    if input.KeyCode == Enum.KeyCode.RightShift then PanicStop() return end
+
+    if input.KeyCode == Enum.KeyCode.Q and not gp then
+        if Config.LockBind == Enum.KeyCode.Q then
+            MainFrame.Visible = not MainFrame.Visible
+            if not MainFrame.Visible then
+                Config.LockActive = false
+            end
+            return
+        end
+    end
+
+    local bind = Config.LockBind
+    local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
+    if not matched then return end
+    if gp then return end
+
+    if Config.LockMode == "Press" then
+        Config.LockActive = not Config.LockActive
+    else
+        Config.LockActive = true
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gp)
+    local bind = Config.LockBind
+    local matched = (input.KeyCode == bind) or (input.UserInputType == bind)
+    if matched and Config.LockMode == "Hold" then
+        Config.LockActive = false
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, gp)
+    if not gp and input.KeyCode == Enum.KeyCode.Q and Config.LockBind ~= Enum.KeyCode.Q then
+        MainFrame.Visible = not MainFrame.Visible
+    end
+end)
+
+-- ============ Multi lock camera (с проверкой на трупы) ============
+RunService.RenderStepped:Connect(function()
+    if not Config.LockActive then return end
+    if #Config.LockedPlayers == 0 then return end
+    local sum = Vector3.new(0, 0, 0)
+    local count = 0
+    for i = #Config.LockedPlayers, 1, -1 do
+        local p = Config.LockedPlayers[i]
+        if not p or not p.Parent then
+            table.remove(Config.LockedPlayers, i)
+            continue
+        end
+        local c = p.Character
+        local hum = c and c:FindFirstChildOfClass("Humanoid")
+        local head = c and c:FindFirstChild("Head")
+        
+        if hum and hum.Health > 0 and head then
+            sum = sum + head.Position
+            count = count + 1
+        end
+    end
+    if count > 0 then
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, sum / count)
+    end
+end)
+
+-- ============ ESP on respawn ============
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        ApplyESPTo(p)
+    end)
+end)
+for _, p in ipairs(Players:GetPlayers()) do
+    p.CharacterAdded:Connect(function()
+        task.wait(1)
+        ApplyESPTo(p)
+    end)
+end

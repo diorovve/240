@@ -1,5 +1,5 @@
 -- Dan FFA | Luau | Roblox Executor
--- Features: Fly (kick-safe), Multi Lock-on, Fast Reload, ESP, Auto-Shoot, Panic
+-- Features: Fly (kick-safe), Multi Lock-on, Instant Fast Reload, ESP, Panic, Menu Toggle
 -- Devs: diorovve & sobhanlover
 
 local Players = game:GetService("Players")
@@ -10,7 +10,6 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
 local Config = {
-    AutoKill = false,
     ESP = false,
     ESPTargets = {},
     LockedPlayers = {},
@@ -18,15 +17,12 @@ local Config = {
     Fly = false,
     FlySpeed = 50,
     FlyAccel = 0.15,
-    AutoKillRange = 50,
     ESPColor = Color3.fromRGB(255, 0, 0),
     LockMode = "Hold",
     LockBind = Enum.KeyCode.Q,
     LockActive = false,
     ReloadThreshold = 0,
 }
-
-local Running = { AutoKill = false, FastReload = false }
 
 local function InLockList(p)
     for _, x in ipairs(Config.LockedPlayers) do if x == p then return true end end
@@ -67,7 +63,6 @@ local function RefreshAllESP()
 end
 
 local function PanicStop()
-    Config.AutoKill = false
     Config.ESP = false
     Config.FastReload = false
     Config.Fly = false
@@ -231,50 +226,6 @@ end
 
 -- ============ Main ============
 CreateHeader("Main")
-CreateToggle("Auto Kill (Shoot)", "AutoKill", function(state)
-    if state and not Running.AutoKill then
-        Running.AutoKill = true
-        task.spawn(function()
-            while Config.AutoKill do
-                task.wait(0.05)
-                local char = LocalPlayer.Character
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-                if not hrp then continue end
-                local nearestHead, nearestDist = nil, Config.AutoKillRange
-                for _, p in ipairs(Players:GetPlayers()) do
-                    if p == LocalPlayer then continue end
-                    local c = p.Character
-                    if not c then continue end
-                    local hum = c:FindFirstChildOfClass("Humanoid")
-                    if not hum or hum.Health <= 0 then continue end
-                    local head = c:FindFirstChild("Head") or c:FindFirstChild("HumanoidRootPart")
-                    local tHrp = c:FindFirstChild("HumanoidRootPart")
-                    if not head or not tHrp then continue end
-                    local d = (tHrp.Position - hrp.Position).Magnitude
-                    if d < nearestDist then
-                        nearestHead = head
-                        nearestDist = d
-                    end
-                end
-                if nearestHead then
-                    if not Config.LockActive then
-                        Camera.CFrame = CFrame.new(Camera.CFrame.Position, nearestHead.Position)
-                    end
-                    local tool = char:FindFirstChildOfClass("Tool")
-                    if tool then pcall(function() tool:Activate() end) end
-                    pcall(function()
-                        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-                        task.wait(0.02)
-                        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
-                    end)
-                    task.wait(0.1)
-                end
-            end
-            Running.AutoKill = false
-        end)
-    end
-end)
-
 CreateToggle("ESP (only selected)", "ESP", function(state)
     RefreshAllESP()
 end)
@@ -291,44 +242,28 @@ local function GetAmmo(tool)
     return nil
 end
 
-CreateToggle("Fast Reload", "FastReload", function(state)
-    if state and not Running.FastReload then
-        Running.FastReload = true
-        task.spawn(function()
-            local lastReloadTime = 0
-            while Config.FastReload do
-                task.wait(0.12)
-                local char = LocalPlayer.Character
-                local tool = char and char:FindFirstChildOfClass("Tool")
-                if tool then
-                    local now = tick()
-                    if (now - lastReloadTime) < 0.5 then continue end
-                    local ammo = GetAmmo(tool)
-                    if ammo ~= nil then
-                        if ammo <= Config.ReloadThreshold then
-                            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                            task.wait(0.03)
-                            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                            lastReloadTime = now
-                            task.wait(0.2)
-                        end
-                    else
-                        if not Config.LockActive and (now - lastReloadTime) > 0.6 then
-                            if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
-                                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
-                                task.wait(0.03)
-                                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
-                                lastReloadTime = now
-                                task.wait(0.2)
-                            end
-                        end
-                    end
-                end
+-- Мгновенная быстрая перезарядка на каждом кадре
+RunService.RenderStepped:Connect(function()
+    if not Config.FastReload then return end
+    local char = LocalPlayer.Character
+    local tool = char and char:FindFirstChildOfClass("Tool")
+    if tool then
+        local ammo = GetAmmo(tool)
+        if ammo ~= nil then
+            if ammo <= Config.ReloadThreshold then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
             end
-            Running.FastReload = false
-        end)
+        else
+            if not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+                VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.R, false, game)
+                VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.R, false, game)
+            end
+        end
     end
 end)
+
+CreateToggle("Fast Reload", "FastReload")
 
 -- ============ Lock ============
 CreateHeader("Lock")
@@ -409,91 +344,3 @@ end)
 -- ============ Players ============
 CreateHeader("Players  (LOCK / ESP)")
 local PlayerList = Instance.new("Frame")
-PlayerList.Size = UDim2.new(1, -4, 0, 320)
-PlayerList.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
-PlayerList.ZIndex = 3
-PlayerList.Parent = Scroll
-local PlayerListCorner = Instance.new("UICorner")
-PlayerListCorner.CornerRadius = UDim.new(0, 6)
-PlayerListCorner.Parent = PlayerList
-
-local PScroll = Instance.new("ScrollingFrame")
-PScroll.Size = UDim2.new(1, -8, 1, -8)
-PScroll.Position = UDim2.new(0, 4, 0, 4)
-PScroll.BackgroundTransparency = 1
-PScroll.ScrollBarThickness = 3
-PScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-PScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
-PScroll.ZIndex = 4
-PScroll.Parent = PlayerList
-local PLayout = Instance.new("UIListLayout")
-PLayout.Padding = UDim.new(0, 3)
-PLayout.Parent = PScroll
-
-local function RefreshPlayerList()
-    pcall(function()
-        local existing = {}
-        for _, child in ipairs(PScroll:GetChildren()) do
-            if child:IsA("Frame") then existing[child.Name] = child end
-        end
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                local key = "P_" .. p.UserId
-                local row = existing[key]
-                if not row then
-                    row = Instance.new("Frame")
-                    row.Name = key
-                    row.Size = UDim2.new(1, -4, 0, 28)
-                    row.BackgroundTransparency = 1
-                    row.ZIndex = 5
-                    row.Parent = PScroll
-
-                    local nameLbl = Instance.new("TextLabel")
-                    nameLbl.Name = "Name"
-                    nameLbl.Size = UDim2.new(1, -110, 1, 0)
-                    nameLbl.Position = UDim2.new(0, 4, 0, 0)
-                    nameLbl.BackgroundTransparency = 1
-                    nameLbl.TextXAlignment = Enum.TextXAlignment.Left
-                    nameLbl.TextColor3 = Color3.fromRGB(200, 200, 220)
-                    nameLbl.Font = Enum.Font.Gotham
-                    nameLbl.TextSize = 11
-                    nameLbl.ZIndex = 5
-                    nameLbl.Parent = row
-
-                    local lockBtn = Instance.new("TextButton")
-                    lockBtn.Name = "LockBtn"
-                    lockBtn.Size = UDim2.new(0, 48, 1, -4)
-                    lockBtn.Position = UDim2.new(1, -108, 0, 2)
-                    lockBtn.Font = Enum.Font.GothamBold
-                    lockBtn.TextSize = 10
-                    lockBtn.ZIndex = 6
-                    lockBtn.Parent = row
-                    local c1 = Instance.new("UICorner"); c1.CornerRadius = UDim.new(0, 4); c1.Parent = lockBtn
-
-                    local espBtn = Instance.new("TextButton")
-                    espBtn.Name = "EspBtn"
-                    espBtn.Size = UDim2.new(0, 48, 1, -4)
-                    espBtn.Position = UDim2.new(1, -56, 0, 2)
-                    espBtn.Font = Enum.Font.GothamBold
-                    espBtn.TextSize = 10
-                    espBtn.ZIndex = 6
-                    espBtn.Parent = row
-                    local c2 = Instance.new("UICorner"); c2.CornerRadius = UDim.new(0, 4); c2.Parent = espBtn
-
-                    lockBtn.MouseButton1Click:Connect(function()
-                        ToggleList(Config.LockedPlayers, p)
-                        RefreshPlayerList()
-                    end)
-                    espBtn.MouseButton1Click:Connect(function()
-                        ToggleList(Config.ESPTargets, p)
-                        ApplyESPTo(p)
-                        RefreshPlayerList()
-                    end)
-                end
-                local nameLbl = row:FindFirstChild("Name")
-                local lockBtn = row:FindFirstChild("LockBtn")
-                local espBtn = row:FindFirstChild("EspBtn")
-                local locked = InLockList(p)
-                local espOn = InESPList(p)
-                nameLbl.Text = p.DisplayName .. " (@" .. p.Name .. ")"
-                nameLbl.TextColor3 = locked and Color3.fromRGB(255, 150, 150)
